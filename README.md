@@ -75,4 +75,3 @@ For **authorized security testing only**. Only scan systems you own or have expl
 ## 👤 Author
 
 **Om Awachar** — Security Analyst  
-HackerOne Hall of Fame × 2 | RBI-recognised Audit Quality | AI Security Researcher
