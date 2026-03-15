@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VulnScanner — Web Vulnerability Assessment Tool</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; min-height: 100vh; }
+    header { background: #161b22; border-bottom: 1px solid #30363d; padding: 16px 32px; display: flex; align-items: center; gap: 12px; }
+    header h1 { font-size: 20px; color: #f0f6fc; }
+    header span { background: #e74c3c; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 4px; }
+    .container { max-width: 900px; margin: 40px auto; padding: 0 24px; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 24px; margin-bottom: 24px; }
+    label { font-size: 13px; color: #8b949e; display: block; margin-bottom: 6px; }
+    input[type=text] { width: 100%; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 10px 14px; color: #c9d1d9; font-size: 14px; outline: none; }
+    input[type=text]:focus { border-color: #58a6ff; }
+    .options { display: flex; gap: 20px; flex-wrap: wrap; margin: 16px 0; }
+    .opt { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+    button { background: #238636; color: #fff; border: none; border-radius: 6px; padding: 10px 24px; font-size: 14px; cursor: pointer; width: 100%; margin-top: 8px; }
+    button:hover { background: #2ea043; }
+    button:disabled { background: #333; cursor: not-allowed; }
+    #results { display: none; }
+    .summary { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+    .badge { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; text-align: center; }
+    .badge.CRITICAL { background: #4d1a1a; color: #f85149; border: 1px solid #f85149; }
+    .badge.HIGH     { background: #3d2300; color: #e67e22; border: 1px solid #e67e22; }
+    .badge.MEDIUM   { background: #3d3300; color: #f1c40f; border: 1px solid #f1c40f; }
+    .badge.LOW      { background: #1a3d1a; color: #2ecc71; border: 1px solid #2ecc71; }
+    .finding { border: 1px solid #30363d; border-radius: 6px; padding: 14px; margin-bottom: 10px; }
+    .finding-title { font-weight: 600; color: #f0f6fc; margin-bottom: 4px; }
+    .finding-detail { font-size: 13px; color: #8b949e; }
+    .finding-evidence { font-size: 12px; color: #6e7681; margin-top: 4px; font-family: monospace; }
+    .sev-CRITICAL { border-left: 3px solid #f85149; }
+    .sev-HIGH     { border-left: 3px solid #e67e22; }
+    .sev-MEDIUM   { border-left: 3px solid #f1c40f; }
+    .sev-LOW      { border-left: 3px solid #2ecc71; }
+    #spinner { display: none; text-align: center; padding: 20px; color: #8b949e; }
+    #report-link { display: none; text-align: center; margin-top: 12px; }
+    #report-link a { color: #58a6ff; font-size: 13px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>🔍 VulnScanner</h1>
+  <span>Security Research</span>
+</header>
+<div class="container">
+  <div class="card">
+    <label>Target URL</label>
+    <input type="text" id="target" placeholder="https://example.com/page?id=1" />
+    <div class="options">
+      <label class="opt"><input type="checkbox" id="opt-headers" checked> Security Headers</label>
+      <label class="opt"><input type="checkbox" id="opt-paths"   checked> Sensitive Paths</label>
+      <label class="opt"><input type="checkbox" id="opt-xss"     checked> XSS</label>
+      <label class="opt"><input type="checkbox" id="opt-sqli"    checked> SQL Injection</label>
+    </div>
+    <button id="scan-btn" onclick="startScan()">Start Scan</button>
+  </div>
+
+  <div id="spinner">⏳ Scanning... please wait</div>
+
+  <div id="results" class="card">
+    <h3 style="color:#f0f6fc;margin-bottom:16px">Scan Results</h3>
+    <div class="summary" id="summary"></div>
+    <div id="findings-list"></div>
+  </div>
+  <div id="report-link"><a href="#" id="report-href" target="_blank">📄 View Full HTML Report</a></div>
+</div>
+
+<script>
+async function startScan() {
+  const url = document.getElementById('target').value.trim();
+  if (!url) { alert('Please enter a target URL'); return; }
+  document.getElementById('scan-btn').disabled = true;
+  document.getElementById('spinner').style.display = 'block';
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('report-link').style.display = 'none';
+
+  const options = {
+    headers: document.getElementById('opt-headers').checked,
+    paths:   document.getElementById('opt-paths').checked,
+    xss:     document.getElementById('opt-xss').checked,
+    sqli:    document.getElementById('opt-sqli').checked,
+  };
+
+  try {
+    const resp = await fetch('/scan', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ url, options })
+    });
+    const data = await resp.json();
+    if (data.error) { alert(data.error); return; }
+    renderResults(data);
+  } catch(e) {
+    alert('Scan failed: ' + e.message);
+  } finally {
+    document.getElementById('scan-btn').disabled = false;
+    document.getElementById('spinner').style.display = 'none';
+  }
+}
+
+function renderResults(data) {
+  const sevOrder = ['CRITICAL','HIGH','MEDIUM','LOW','INFO'];
+  const summary = document.getElementById('summary');
+  summary.innerHTML = `<div style="font-size:13px;color:#8b949e;align-self:center">Total: <b style="color:#f0f6fc">${data.total}</b> findings in ${data.duration}s</div>`;
+  for (const sev of sevOrder) {
+    if (data.counts[sev]) {
+      summary.innerHTML += `<div class="badge ${sev}">${data.counts[sev]} ${sev}</div>`;
+    }
+  }
+
+  const list = document.getElementById('findings-list');
+  list.innerHTML = '';
+  if (data.findings.length === 0) {
+    list.innerHTML = '<p style="color:#2ecc71;text-align:center">✓ No vulnerabilities detected</p>';
+  } else {
+    for (const f of data.findings) {
+      list.innerHTML += `
+        <div class="finding sev-${f.severity}">
+          <div class="finding-title">[${f.severity}] ${f.name}</div>
+          <div class="finding-detail">${f.detail}</div>
+          ${f.evidence ? `<div class="finding-evidence">${f.evidence}</div>` : ''}
+        </div>`;
+    }
+  }
+  document.getElementById('results').style.display = 'block';
+  if (data.report_id) {
+    const a = document.getElementById('report-href');
+    a.href = `/report/${data.report_id}`;
+    document.getElementById('report-link').style.display = 'block';
+  }
+}
+</script>
+</body>
+</html>
